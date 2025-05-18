@@ -2,3 +2,6 @@ numpy
 pyzmq
 scipy
 websockets
+asyncio
+matplotlib
+zmq
