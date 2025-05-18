@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Live BCEA JSON Logger (Rounded)</title>
+  <script src="https://api.gazerecorder.com/GazeCloudAPI.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    h1 { margin-bottom: .5rem; }
+    #status { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>FocusLoop – Live BCEA JSON Logger</h1>
+  <p id="status">Initializing GazeCloudAPI…</p>
+
+  <script>
+    // configuration
+    const WINDOW_MS   = 1000;  // 1 s rolling window
+    const INTERVAL_MS = 25;    // 0.025 s
+
+    // buffer for recent gaze samples
+    const buffer = [];
+
+    // GazeCloudAPI callbacks
+    GazeCloudAPI.UseClickRecalibration = true;
+
+    GazeCloudAPI.OnResult = ({ state, docX, docY }) => {
+      const now = Date.now();
+      buffer.push({ state, x: docX, y: docY, t: now });
+      while (buffer.length && buffer[0].t < now - WINDOW_MS) {
+        buffer.shift();
+      }
+    };
+
+    GazeCloudAPI.OnCalibrationComplete = () => {
+      document.getElementById('status').textContent =
+        'Calibrated. Tracking…';
+    };
+
+    GazeCloudAPI.OnCamDenied = () => {
+      document.getElementById('status').textContent =
+        'Camera access denied';
+    };
+
+    GazeCloudAPI.OnError = msg => console.error('GazeCloudAPI error:', msg);
+
+    // BCEA calculation
+    function calculateBCEA(points) {
+      const valid = points.filter(p => p.state === 0);
+      if (valid.length < 2) return null;
+
+      const xs = valid.map(p => p.x),
+            ys = valid.map(p => p.y);
+      const mx = xs.reduce((s,v) => s + v, 0) / xs.length;
+      const my = ys.reduce((s,v) => s + v, 0) / ys.length;
+
+      let vX = 0, vY = 0, cXY = 0;
+      for (let i = 0; i < xs.length; i++) {
+        const dx = xs[i] - mx, dy = ys[i] - my;
+        vX  += dx * dx;
+        vY  += dy * dy;
+        cXY += dx * dy;
+      }
+      vX  /= xs.length;
+      vY  /= xs.length;
+      cXY /= xs.length;
+
+      const det = vX * vY - cXY * cXY;
+      return det > 0
+        ? 2 * Math.PI * Math.sqrt(det)
+        : 0;
+    }
+
+    // emit JSON every INTERVAL_MS
+    setInterval(() => {
+      const nowSec = Date.now() / 1000;
+      const bceaRaw = calculateBCEA(buffer);
+      const latest  = buffer[buffer.length - 1] || {};
+
+      const xVal = (latest.state === 0)
+        ? Number(latest.x.toFixed(1))
+        : null;
+      const yVal = (latest.state === 0)
+        ? Number(latest.y.toFixed(1))
+        : null;
+      const bceaVal = (bceaRaw !== null)
+        ? Number(bceaRaw.toFixed(2))
+        : null;
+
+      const payload = {
+        ts:   nowSec,    // seconds since epoch
+        x:    xVal,      // px or null
+        y:    yVal,      // px or null
+        bcea: bceaVal    // px² or null
+      };
+
+      console.log(JSON.stringify(payload));
+    }, INTERVAL_MS);
+
+    // start tracking
+    GazeCloudAPI.StartEyeTracking();
+    document.getElementById('status').textContent =
+      'Tracking… click feed to calibrate.';
+  </script>
+</body>
+</html>
