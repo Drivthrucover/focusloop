@@ -14,18 +14,18 @@ times = []
 focus_vals = []
 start_time = time.time()
 
-plt.style.use("seaborn-v0_8")  # optional nicer look
+plt.style.use("seaborn-v0_8")  
 fig, ax = plt.subplots(figsize=(8, 4))
 line, = ax.plot([], [], lw=2)
-ax.set_xlim(0, 30)         # 30‑second rolling window
+ax.set_xlim(0, 30)        
 ax.set_ylim(0, 1)
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("Focus (0‑1)")
 ax.set_title("Live Focus Index")
 
-# --- Animation update ---
+
 def update(frame):
-    while sub.poll(timeout=0):          # grab all queued messages
+    while sub.poll(timeout=0):      
         msg = sub.recv_json()
         t_now = msg["ts"] - start_time
         focus = msg["focus"]

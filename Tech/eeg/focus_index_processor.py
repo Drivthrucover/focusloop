@@ -2,10 +2,14 @@ import numpy as np
 import zmq
 import time
 import collections
+from collections import deque
 from pylsl import StreamInlet, resolve_streams
 from scipy.signal import welch, iirnotch, filtfilt, butter
 from pylsl import StreamInlet, resolve_streams
 import time
+
+
+ma_window = deque(maxlen=64)   # 8 samples ≈ 2 s at 4 Hz updates
 
 
 context = zmq.Context()
@@ -63,6 +67,8 @@ print(f"Baseline focus = {baseline:.3f}")
 
 prev_focus = 0.5    # start near neutral
 alpha = 0.2         # smoothing factor (0.1 = very smooth, 0.3 = quicker)
+slow_focus = 0.5      # start neutral
+alpha_slow = 0.05     # small = very smooth (≈ 20‑s time‑constant)
 while True:
     sample, timestamp = inlet.pull_sample()
     # Check if the channel reads -1000 and skip if so
@@ -105,6 +111,17 @@ while True:
     # --- Compute raw focus index ---
     focus_raw = beta / (theta + alpha + 1e-6)
     focus_scaled = 1 / (1 + np.exp(-3 * (focus_raw / baseline - 1)))  # 0–1
+
+    ma_window.append(focus_scaled)
+    if len(ma_window) < ma_window.maxlen:
+        continue  # wait until the window is full
+
+    focus_scaled = sum(ma_window) / len(ma_window)
+
+    slow_focus = alpha_slow * focus_scaled + (1 - alpha_slow) * slow_focus
+    focus_scaled = slow_focus     # use the smoothed value from here on
+
+
     # --- Publish scaled focus directly ---
     msg = {
         "ts": time.time(),
